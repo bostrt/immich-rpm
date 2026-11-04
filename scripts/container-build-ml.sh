@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd /work
-version=3.3.5
-export UV_CACHE_DIR=/work/.work/uv-cache
+# shellcheck source=scripts/build-common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/build-common.sh"
+init_package immich-machine-learning.spec
+export UV_CACHE_DIR="$repo/.work/uv-cache"
 export UV_PYTHON_DOWNLOADS=never
-mkdir -p "$HOME" .work/ml-top/{BUILD,BUILDROOT,RPMS,SRPMS,SOURCES,SPECS} results
-(cd sources && sha256sum -c SHA256SUMS)
-if [[ ! -f sources/immich-$version-uv-cache.tar.gz ]]; then
+cache="sources/immich-$version-uv-cache.tar.gz"
+inputs=$(sha256sum "sources/immich-$version.tar.gz"; uv --version; python3.13 --version)
+if [[ ! -f $cache || ! -f $cache.inputs ]] || [[ $(cat "$cache.inputs") != "$inputs" ]]; then
   mkdir -p .work/ml-fetch
   tar -xzf "sources/immich-$version.tar.gz" -C .work/ml-fetch
   uv sync --project ".work/ml-fetch/immich-$version/machine-learning" \
     --python /usr/bin/python3.13 --frozen --extra cpu --no-dev --no-install-project --link-mode copy
-  tar -czf "sources/immich-$version-uv-cache.tar.gz" -C .work uv-cache
+  tar -czf "$cache.part" -C .work uv-cache
+  mv "$cache.part" "$cache"
+  printf '%s\n' "$inputs" > "$cache.inputs"
 fi
-cp "sources/immich-$version.tar.gz" "sources/immich-$version-uv-cache.tar.gz" .work/ml-top/SOURCES/
-find packaging -maxdepth 1 -type f -exec cp -t .work/ml-top/SOURCES/ {} +
-cp immich-machine-learning.spec .work/ml-top/SPECS/
-rpmbuild -ba --define '_topdir /work/.work/ml-top' .work/ml-top/SPECS/immich-machine-learning.spec
-cp .work/ml-top/RPMS/*/*.rpm .work/ml-top/SRPMS/*.rpm results/
-sha256sum results/*.rpm > results/SHA256SUMS
+cp "sources/immich-$version.tar.gz" "$cache" "$top/SOURCES/"
+build_package
+sha256sum "sources/immich-$version.tar.gz" "$cache" > results/immich-machine-learning-SOURCES.sha256

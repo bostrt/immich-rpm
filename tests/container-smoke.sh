@@ -4,7 +4,10 @@ set -euo pipefail
 [[ -f /run/.containerenv || -f /.dockerenv ]] || { echo 'Container required' >&2; exit 1; }
 dnf_options=(--setopt=install_weak_deps=False)
 if [[ ${IMMICH_TEST_OFFLINE:-0} == 1 ]]; then dnf_options+=(--disablerepo='*'); fi
-dnf -y "${dnf_options[@]}" install /work/results/*.x86_64.rpm python3 curl procps-ng
+dnf -y "${dnf_options[@]}" install /rpms/*.rpm python3 curl procps-ng
+with_ml=${IMMICH_TEST_ML:-1}
+rpm -q immich
+if [[ $with_ml == 1 ]]; then rpm -q immich-machine-learning; fi
 mkdir -p /run/postgresql /var/lib/pgsql/data /var/cache/immich-machine-learning
 chown postgres:postgres /run/postgresql /var/lib/pgsql/data
 runuser -u postgres -- initdb -D /var/lib/pgsql/data --auth-local=peer --auth-host=scram-sha-256
@@ -14,17 +17,20 @@ immich-setup
 # Check that explicitly rerunning database setup is safe.
 immich-setup
 valkey-server --bind 127.0.0.1 --port 6379 --daemonize yes
-systemd-analyze verify /usr/lib/systemd/system/immich.service /usr/lib/systemd/system/immich-machine-learning.service
-chown immich-ml:immich-ml /var/cache/immich-machine-learning
-runuser -u immich-ml -- bash -c '
-  set -a
-  source /etc/immich/machine-learning.conf
-  set +a
-  export PATH=/usr/libexec/immich-machine-learning/venv/bin:/usr/bin
-  export PYTHONDONTWRITEBYTECODE=1
-  cd /usr/libexec/immich-machine-learning
-  exec python -m immich_ml
-' > /tmp/immich-ml.log 2>&1 &
+systemd-analyze verify /usr/lib/systemd/system/immich.service
+if [[ $with_ml == 1 ]]; then
+  systemd-analyze verify /usr/lib/systemd/system/immich-machine-learning.service
+  chown immich-ml:immich-ml /var/cache/immich-machine-learning
+  runuser -u immich-ml -- bash -c '
+    set -a
+    source /etc/immich/machine-learning.conf
+    set +a
+    export PATH=/usr/libexec/immich-machine-learning/venv/bin:/usr/bin
+    export PYTHONDONTWRITEBYTECODE=1
+    cd /usr/libexec/immich-machine-learning
+    exec python -m immich_ml
+  ' > /tmp/immich-ml.log 2>&1 &
+fi
 runuser -u immich -- bash -c '
   set -a
   source /etc/immich/immich.conf
@@ -35,7 +41,7 @@ runuser -u immich -- bash -c '
 ' > /tmp/immich-server.log 2>&1 &
 cleanup() {
   cp /tmp/immich-server.log /work/results/smoke-server.log
-  cp /tmp/immich-ml.log /work/results/smoke-ml.log
+  if [[ $with_ml == 1 ]]; then cp /tmp/immich-ml.log /work/results/smoke-ml.log; fi
 }
 trap cleanup EXIT
 python3 /work/tests/smoke.py
@@ -46,5 +52,8 @@ if grep -q 'not found' /work/results/native-linkage.txt; then
   exit 1
 fi
 grep 'libvips-cpp.so' /work/results/native-linkage.txt
-rpm -V immich immich-machine-learning
-echo 'PASS: Fedora RPM installation, database setup, web/API, upload, thumbnail, metadata and ONNX CPU inference' | tee /work/results/smoke-result.txt
+rpm -V immich
+if [[ $with_ml == 1 ]]; then rpm -V immich-machine-learning; fi
+summary='PASS: Fedora RPM installation, database setup, web/API, upload, thumbnail and metadata'
+if [[ $with_ml == 1 ]]; then summary+=', ML health and ONNX CPU inference'; fi
+echo "$summary" | tee /work/results/smoke-result.txt

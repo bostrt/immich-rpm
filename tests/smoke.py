@@ -1,5 +1,6 @@
 """End-to-end test against the RPMs in a disposable container."""
 import json
+import os
 import subprocess
 import time
 import urllib.error
@@ -42,20 +43,23 @@ def wait_for(label, callback, seconds=180):
 wait_for("server startup and PostgreSQL migrations", lambda: request("/api/server/ping"))
 assert b"<html" in request("/").lower()
 print("PASS: web UI", flush=True)
-assert request("/api/server/version")["major"] == 3
-wait_for("CPU ML service", lambda: request("http://127.0.0.1:3003/ping") == b"pong")
-subprocess.run([
-    "runuser", "-u", "immich-ml", "--",
-    "/usr/libexec/immich-machine-learning/venv/bin/python", "-c",
-    "import onnx, onnxruntime as ort, numpy as np; "
-    "h = onnx.helper; t = onnx.TensorProto.FLOAT; "
-    "g = h.make_graph([h.make_node('Add', ['x', 'x'], ['y'])], 'rpm-smoke', "
-    "[h.make_tensor_value_info('x', t, [2])], [h.make_tensor_value_info('y', t, [2])]); "
-    "m = h.make_model(g, opset_imports=[h.make_opsetid('', 17)], ir_version=9); "
-    "s = ort.InferenceSession(m.SerializeToString(), providers=['CPUExecutionProvider']); "
-    "assert np.array_equal(s.run(None, {'x': np.array([1, 2], dtype=np.float32)})[0], [2, 4])",
-], check=True)
-print("PASS: ONNX CPU inference", flush=True)
+expected_version = subprocess.check_output(["rpm", "-q", "--qf", "%{VERSION}", "immich"], text=True).split(".")
+actual_version = request("/api/server/version")
+assert [actual_version[key] for key in ("major", "minor", "patch")] == list(map(int, expected_version))
+if os.environ.get("IMMICH_TEST_ML", "1") == "1":
+    wait_for("CPU ML service", lambda: request("http://127.0.0.1:3003/ping") == b"pong")
+    subprocess.run([
+        "runuser", "-u", "immich-ml", "--",
+        "/usr/libexec/immich-machine-learning/venv/bin/python", "-c",
+        "import onnx, onnxruntime as ort, numpy as np; "
+        "h = onnx.helper; t = onnx.TensorProto.FLOAT; "
+        "g = h.make_graph([h.make_node('Add', ['x', 'x'], ['y'])], 'rpm-smoke', "
+        "[h.make_tensor_value_info('x', t, [2])], [h.make_tensor_value_info('y', t, [2])]); "
+        "m = h.make_model(g, opset_imports=[h.make_opsetid('', 17)], ir_version=9); "
+        "s = ort.InferenceSession(m.SerializeToString(), providers=['CPUExecutionProvider']); "
+        "assert np.array_equal(s.run(None, {'x': np.array([1, 2], dtype=np.float32)})[0], [2, 4])",
+    ], check=True)
+    print("PASS: ONNX CPU inference", flush=True)
 wait_for("background workers and core plugin", lambda: "Loaded plugin:" in Path("/tmp/immich-server.log").read_text())
 
 password = str(uuid.uuid4()) + "aA1!"

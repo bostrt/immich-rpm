@@ -15,8 +15,9 @@ With rootless Podman already available:
 ./scripts/build.sh
 ```
 
-Use `./scripts/build.sh --server-only` to omit ML. RPMs and source RPMs are written
-to `results/`, downloads to `sources/`, and temporary build files to `.work/`.
+Use `./scripts/build.sh --server-only` to omit ML. RPMs are written to `results/`,
+source RPMs to `results/SRPMS/`, downloads to `sources/`, and temporary build
+files to `.work/`.
 The first build needs network access for Fedora packages, upstream sources, and
 locked npm/Python dependencies. Subsequent RPM builds reuse those caches.
 Budget approximately 15 GB of free disk space and 6 GB of available memory.
@@ -29,10 +30,70 @@ on SELinux systems.
 
 `immich.spec` builds TypeScript, the Svelte web UI, and the core WASM plugin from
 source. It compiles Sharp and bcrypt against Fedora headers. The source RPMs
-include the dependency caches and geodata snapshot needed to reproduce their
-payloads with the builder images. The builder uses pinned pnpm 11.27.1 and the
-upstream-pinned Extism compiler 1.7.0; the latter is a build-only binary, checked
-against its upstream SHA-256.
+include the dependency caches, geodata snapshot, and pinned pnpm 11.27.1 needed
+to rebuild without the original builder image. The upstream-pinned Extism
+compiler 1.7.0 is a build-only binary. Both build tools and the Immich release
+archive are checked against `sources/SHA256SUMS`.
+Source preparation runs pnpm's registry policy checks while online. The RPM
+build uses `--offline --frozen-lockfile --trust-lockfile` so it does not need the
+preparer's private registry-metadata cache; store integrity checks remain enabled.
+
+## Prepare source RPMs for COPR
+
+```bash
+./scripts/build.sh --srpm-only
+```
+
+This downloads/prepares dependencies and runs `rpmbuild -bs` inside Podman;
+it does not compile the server or install build tools on the host. It produces
+`results/SRPMS/immich-3.3.5-2.fc44.src.rpm`. The SRPM contains everything needed
+for an offline RPM build. COPR uses its own Mock buildroot and the spec's
+`BuildRequires`, not this repository's Containerfile.
+
+Verify the SRPM locally before uploading:
+
+```bash
+./scripts/check-srpm.sh results/SRPMS/immich-3.3.5-2.fc44.src.rpm
+```
+
+The checker starts from Fedora 44, installs RPM build tooling and only the
+SRPM's declared build dependencies, then rebuilds as an unprivileged user with
+`--network=none`. It writes the binary RPM and rebuild log to `results/`. This
+catches dependencies accidentally supplied by the convenience builder, but it
+is not a full reproduction of COPR's Mock configuration. Check work directories
+and images remain available for debugging under `.work/check-srpm.*` and
+`localhost/immich-rpm-check:*`.
+
+With your COPR credentials configured, the manual submission commands are:
+
+```bash
+# Once, for a new project:
+copr-cli create immich --chroot fedora-44-x86_64 --enable-net off
+# Upload this source RPM, not the bare spec or a prebuilt binary RPM:
+copr-cli build immich results/SRPMS/immich-3.3.5-2.fc44.src.rpm \
+  --chroot fedora-44-x86_64 --enable-net off
+```
+
+Replace `immich` with your project name. The scripts do not create projects,
+upload sources, or publish packages. Start with Fedora 44 x86_64; other releases
+and architectures have not been validated. The checked-in specs alone cannot
+be built using COPR's default Git method because the generated dependency
+archives are not checked into Git. Use SRPM uploads for now.
+
+The optional ML SRPM can be prepared with `--srpm-only --with-ml` and checked
+with `check-srpm.sh` in the same way. **Its bundled media libraries need review
+before public COPR submission.** The pinned `opencv-python-headless` wheel
+contains its own FFmpeg (`libavcodec`, `libavformat`, etc.) and OpenSSL 1.1.1k,
+independent of Fedora's `ffmpeg-free` and OpenSSL updates. Its FFmpeg build
+configuration does not show Fedora's codec restrictions. This is a concrete
+redistribution and maintenance concern, not a determination of COPR acceptance.
+Review the bundled codecs/licenses or replace the wheel with a suitable build
+before publishing ML. A successful offline rebuild does not resolve that review.
+
+[COPR accepts direct SRPM uploads](https://docs.copr.fedorainfracloud.org/user_documentation.html#direct-upload)
+and does not require full Fedora Packaging Guidelines compliance, but its
+[content and license requirements](https://docs.copr.fedorainfracloud.org/user_documentation.html#what-i-can-build-in-copr)
+still apply to all uploaded sources and binaries, including bundled dependencies.
 
 ## Install and initialize
 
@@ -40,9 +101,9 @@ These commands install runtime packages on the machine that will host Immich.
 Building the RPMs does not run them on your host.
 
 ```bash
-sudo dnf install ./results/immich-3.3.5-1.fc44.x86_64.rpm
+sudo dnf install ./results/immich-3.3.5-2.fc44.x86_64.rpm
 # Optional:
-sudo dnf install ./results/immich-machine-learning-3.3.5-1.fc44.x86_64.rpm
+sudo dnf install ./results/immich-machine-learning-3.3.5-2.fc44.x86_64.rpm
 ```
 
 For a **new** PostgreSQL installation, initialize its cluster once:
@@ -156,10 +217,11 @@ for a Fedora distribution submission. Keep the source RPMs with the binaries.
 
 ## Test in a disposable container
 
-After building both packages:
+After building both packages, select the exact RPMs to test:
 
 ```bash
-./scripts/test.sh
+./scripts/test.sh results/immich-3.3.5-2.fc44.x86_64.rpm \
+  results/immich-machine-learning-3.3.5-2.fc44.x86_64.rpm
 ```
 
 The test installs the RPMs into a clean Fedora 44 container, initializes a fresh
@@ -170,6 +232,13 @@ inference. It also verifies unit
 syntax, RPM file integrity, and native library linkage. Logs go to `results/`.
 This does not test a booted systemd host, SELinux policy for runtime services,
 every media format, downloaded model inference, or GPU acceleration.
+
+For a server-only COPR build, use
+`./scripts/test.sh --server-only results/immich-3.3.5-2.fc44.x86_64.rpm`.
+This skips ML installation and checks while exercising the database, UI, upload,
+thumbnail, and metadata paths. You can use explicit paths to RPMs downloaded
+from COPR, too. With no paths, the test accepts only one RPM per requested package
+in `results/`; it refuses to guess between releases left by earlier builds.
 
 The initial Fedora 44 build passed these checks. The dependency-cache rebuild
 was also verified in a container with networking disabled. Detailed service logs

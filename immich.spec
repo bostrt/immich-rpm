@@ -5,7 +5,7 @@
 
 Name:           immich
 Version:        3.3.5
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Native photo and video management server
 License:        AGPL-3.0-only AND MIT AND BSD-3-Clause AND Apache-2.0 AND CC-BY-4.0
 URL:            https://immich.app
@@ -21,11 +21,17 @@ Source8:        use-system-exiftool.py
 Source9:        extism-js-x86_64-linux-v1.7.0.gz
 Source10:       README.md
 Source11:       NOTICE
+Source12:       https://registry.npmjs.org/pnpm/-/pnpm-11.27.1.tgz
 Patch0:         0001-sharp-use-fedora-libvips.patch
 ExclusiveArch:  x86_64
 BuildRequires:  nodejs24-devel nodejs24-npm gcc-c++ make python3 vips-devel
 BuildRequires:  systemd-rpm-macros perl-Image-ExifTool binaryen
+BuildRequires:  nodejs24 >= 1:24.18
+# pnpm's progress renderer uses Intl.Segmenter; small-ICU Node can crash here.
+BuildRequires:  nodejs24-full-i18n
+BuildRequires:  tar gzip findutils
 Requires:       nodejs24 >= 1:24.18
+Requires:       nodejs24-full-i18n
 Requires:       vips >= 8.18.3
 Requires:       perl-Image-ExifTool ImageMagick ffmpeg-free
 Requires:       postgresql postgresql-server postgresql-contrib pgvector >= 0.7
@@ -47,9 +53,13 @@ the upstream lockfile. Machine learning is a separate service.
 %patch -P 0 -p1
 tar -xzf %{SOURCE1}
 tar -xzf %{SOURCE2}
-mkdir -p rpm-tools
+mkdir -p rpm-tools/pnpm-package
 gzip -dc %{SOURCE9} > rpm-tools/extism-js
 chmod 755 rpm-tools/extism-js
+# Ship the exact package manager with the SRPM. COPR does not use Containerfile.
+tar -xzf %{SOURCE12} -C rpm-tools/pnpm-package --strip-components=1
+chmod 755 rpm-tools/pnpm-package/bin/pnpm.mjs
+ln -s pnpm-package/bin/pnpm.mjs rpm-tools/pnpm
 cp %{SOURCE10} README.fedora.md
 cp %{SOURCE11} NOTICE.fedora
 
@@ -61,13 +71,15 @@ export npm_config_nodedir=/usr
 export npm_config_store_dir="$PWD/pnpm-store"
 export npm_config_offline=true
 export PATH="$PWD/rpm-tools:$PATH"
-pnpm --store-dir "$PWD/pnpm-store" --filter 'immich...' --filter 'immich-web...' --filter '@immich/plugin-core...' install --offline --frozen-lockfile
+# Source preparation verifies registry policies online. Offline builds use that
+# frozen lockfile; package integrity checks stay enabled without registry metadata.
+pnpm --store-dir "$PWD/pnpm-store" --filter 'immich...' --filter 'immich-web...' --filter '@immich/plugin-core...' install --offline --frozen-lockfile --trust-lockfile
 pnpm --config.verify-deps-before-run=false --filter @immich/sdk build
 pnpm --config.verify-deps-before-run=false --filter @immich/plugin-sdk build
 pnpm --config.verify-deps-before-run=false --filter immich build
 pnpm --config.verify-deps-before-run=false --filter immich-web build
 pnpm --config.verify-deps-before-run=false --filter @immich/plugin-core build
-pnpm --store-dir "$PWD/pnpm-store" --offline --filter immich --prod --no-optional deploy "$PWD/server-pruned"
+pnpm --store-dir "$PWD/pnpm-store" --offline --trust-lockfile --filter immich --prod --no-optional deploy "$PWD/server-pruned"
 pnpm --config.verify-deps-before-run=false --dir server-pruned/node_modules/sharp exec npm run build
 python3 %{SOURCE8}
 # Keep only native binaries built for this platform, not bundled libvips.
@@ -133,5 +145,9 @@ test -s ../packages/plugin-core/dist/plugin.wasm
 %attr(0750,immich,immich) %dir %{_localstatedir}/cache/immich
 
 %changelog
+* Wed Nov 04 2026 Immich RPM contributors - 3.3.5-2
+- Include the pinned pnpm build tool for offline COPR builds
+- Require Node ICU data explicitly in minimal build and runtime environments
+
 * Tue Nov 03 2026 Immich RPM contributors - 3.3.5-1
 - Initial native Fedora 44 package, built in a container

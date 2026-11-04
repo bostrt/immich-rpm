@@ -10,7 +10,7 @@
 
 Name:           immich-machine-learning
 Version:        3.3.5
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Optional native CPU machine learning service for Immich
 License:        AGPL-3.0-only AND MIT AND Apache-2.0 AND BSD-3-Clause
 URL:            https://immich.app
@@ -21,6 +21,8 @@ Source3:        machine-learning.conf
 Source4:        immich-machine-learning.sysusers
 ExclusiveArch:  x86_64
 BuildRequires:  python3.13 uv systemd-rpm-macros
+# The import check loads native wheels even in a minimal buildroot.
+BuildRequires:  libstdc++ libgcc libgomp zlib tar gzip findutils
 Requires:       python3.13 glibc libstdc++ libgcc libgomp zlib
 Requires:       systemd
 Requires(pre):  systemd
@@ -83,5 +85,8 @@ PYTHONPATH=machine-learning ml-venv/bin/python -c 'import immich_ml.main; import
 %attr(0750,immich-ml,immich-ml) %dir %{_localstatedir}/cache/immich-machine-learning
 
 %changelog
+* Wed Nov 04 2026 Immich RPM contributors - 3.3.5-2
+- Declare native libraries needed by the build-time import check
+
 * Tue Nov 03 2026 Immich RPM contributors - 3.3.5-1
 - Optional CPU machine learning service with Fedora Python

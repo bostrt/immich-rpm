@@ -2,6 +2,11 @@
 # Maintainer helper: regenerate the minimal Fedora Sharp compatibility patch.
 # Run in the builder container, from /work.
 set -euo pipefail
+export PATH="/work/.work/tools:$PATH"
+if ! command -v pnpm > /dev/null; then
+  echo 'Prepare the pinned package manager first: ./scripts/build.sh --srpm-only' >&2
+  exit 1
+fi
 mkdir -p .work/pin-sharp patches
 tar -xzf sources/immich-3.3.5.tar.gz -C .work/pin-sharp
 cd .work/pin-sharp/immich-3.3.5
