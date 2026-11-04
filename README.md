@@ -49,14 +49,14 @@ preparer's private registry-metadata cache; store integrity checks remain enable
 
 This downloads/prepares dependencies and runs `rpmbuild -bs` inside Podman;
 it does not compile the server or install build tools on the host. It produces
-`results/SRPMS/immich-3.3.5-3.fc44.src.rpm`. The SRPM contains everything needed
+`results/SRPMS/immich-3.3.5-4.fc44.src.rpm`. The SRPM contains everything needed
 for an offline RPM build. COPR uses its own Mock buildroot and the spec's
 `BuildRequires`, not this repository's Containerfile.
 
 Verify the SRPM locally before uploading:
 
 ```bash
-./scripts/check-srpm.sh results/SRPMS/immich-3.3.5-3.fc44.src.rpm
+./scripts/check-srpm.sh results/SRPMS/immich-3.3.5-4.fc44.src.rpm
 ```
 
 The checker starts from Fedora 44, installs RPM build tooling and only the
@@ -73,7 +73,7 @@ With your COPR credentials configured, the manual submission commands are:
 # Once, for a new project:
 copr-cli create immich --chroot fedora-44-x86_64 --chroot fedora-45-x86_64 --enable-net off
 # Upload this source RPM, not the bare spec or a prebuilt binary RPM:
-copr-cli build immich results/SRPMS/immich-3.3.5-3.fc44.src.rpm \
+copr-cli build immich results/SRPMS/immich-3.3.5-4.fc44.src.rpm \
   --chroot fedora-44-x86_64 --chroot fedora-45-x86_64 --enable-net off
 ```
 
@@ -109,8 +109,8 @@ release on Fedora 43 before advertising support. New Fedora releases are not
 added automatically.
 
 Pushing a new tag named `immich-VERSION-RELEASE` starts a build of that tagged
-commit. For example, `immich-3.3.5-3` matches `Version: 3.3.5` and
-`Release: 3%{?dist}` in `immich.spec`. The source target rejects tags that do not
+commit. For example, `immich-3.3.5-4` matches `Version: 3.3.5` and
+`Release: 4%{?dist}` in `immich.spec`. The source target rejects tags that do not
 match the spec. A tag does not update the spec or source checksums for you.
 
 For the next packaging revision of the same upstream release:
@@ -122,8 +122,8 @@ For the next packaging revision of the same upstream release:
 
    ```bash
    git push origin main
-   git tag -a immich-3.3.5-4 -m 'Immich 3.3.5 packaging release 4'
-   git push origin immich-3.3.5-4
+   git tag -a immich-3.3.5-5 -m 'Immich 3.3.5 packaging release 5'
+   git push origin immich-3.3.5-5
    ```
 
 3. Follow the build on COPR. A successful build publishes the RPM to its
@@ -181,7 +181,7 @@ sudo dnf install immich
 For locally built RPMs:
 
 ```bash
-sudo dnf install ./results/immich-3.3.5-3.fc44.x86_64.rpm
+sudo dnf install ./results/immich-3.3.5-4.fc44.x86_64.rpm
 # Optional:
 sudo dnf install ./results/immich-machine-learning-3.3.5-2.fc44.x86_64.rpm
 ```
@@ -267,7 +267,7 @@ HTTPS access for that first use.
 | Queue/cache | Fedora `valkey` |
 | Image processing | Fedora `vips`, `ImageMagick` |
 | Metadata | Fedora `perl-Image-ExifTool` |
-| Video | Fedora `ffmpeg-free` |
+| Video | `/usr/bin/ffmpeg` and `/usr/bin/ffprobe`, supplied by Fedora `ffmpeg-free` or an installed RPM Fusion `ffmpeg` |
 | Python interpreter | Fedora `python3.13` |
 | Application JavaScript | Private modules from the upstream lockfile, with the Sharp pin below |
 | Python ML stack | Private CPU environment from upstream `uv.lock` |
@@ -289,11 +289,13 @@ including CPU ONNX Runtime 1.30.0. It does not replace the system Python package
 and does not install CUDA, ROCm, or OpenVINO runtimes.
 
 Fedora's media packages differ from Immich's custom upstream media builds.
-Codec support, especially H.264/H.265/HEIC, depends on Fedora's available codecs.
+Codec support, especially H.264/H.265/HEIC, depends on the installed media libraries.
 `ffmpeg-free` does not supply libx264; select an available encoder such as VP9 in
 Immich's transcoding settings. This package does not enable third-party RPM
-repositories. Hardware acceleration and all phone/camera formats need separate
-validation on the target hardware.
+repositories. An existing RPM Fusion `ffmpeg` installation satisfies the command
+dependencies and does not need to be replaced with `ffmpeg-free`. Hardware
+acceleration and all phone/camera formats need separate validation on the
+target hardware.
 
 These are personal deployment RPMs, not official Fedora or upstream Immich
 packages. Bundled JavaScript, Python wheels, and the build-only Extism binary
@@ -305,7 +307,7 @@ for a Fedora distribution submission. Keep the source RPMs with the binaries.
 After building both packages, select the exact RPMs to test:
 
 ```bash
-./scripts/test.sh results/immich-3.3.5-3.fc44.x86_64.rpm \
+./scripts/test.sh results/immich-3.3.5-4.fc44.x86_64.rpm \
   results/immich-machine-learning-3.3.5-2.fc44.x86_64.rpm
 ```
 
@@ -319,9 +321,20 @@ This does not test a booted systemd host, SELinux policy for runtime services,
 every media format, downloaded model inference, or GPU acceleration.
 
 For a server-only COPR build, use
-`./scripts/test.sh --server-only results/immich-3.3.5-3.fc44.x86_64.rpm`.
-This skips ML installation and checks while exercising the database, UI, upload,
-thumbnail, and metadata paths. You can use explicit paths to RPMs downloaded
+`./scripts/test.sh --server-only results/immich-3.3.5-4.fc44.x86_64.rpm`.
+To additionally test installation with RPM Fusion FFmpeg already installed:
+
+```bash
+IMMICH_TEST_FFMPEG=rpmfusion ./scripts/test.sh --server-only \
+  results/immich-3.3.5-4.fc44.x86_64.rpm
+```
+
+This explicitly enables RPM Fusion only inside the disposable test container,
+installs its FFmpeg first, and checks that Immich preserves it. The default test
+uses Fedora repositories and checks that `ffmpeg-free` supplies both commands.
+
+The server-only test skips ML installation and checks while exercising the
+database, UI, upload, thumbnail, and metadata paths. You can use explicit paths to RPMs downloaded
 from COPR, too. With no paths, the test accepts only one RPM per requested package
 in `results/`; it refuses to guess between releases left by earlier builds.
 

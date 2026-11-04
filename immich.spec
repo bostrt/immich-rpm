@@ -5,7 +5,7 @@
 
 Name:           immich
 Version:        3.3.5
-Release:        3%{?dist}
+Release:        4%{?dist}
 Summary:        Native photo and video management server
 License:        AGPL-3.0-only AND MIT AND BSD-3-Clause AND Apache-2.0 AND CC-BY-4.0
 URL:            https://immich.app
@@ -33,7 +33,9 @@ BuildRequires:  tar gzip findutils
 Requires:       nodejs24 >= 1:24.18
 Requires:       nodejs24-full-i18n
 Requires:       vips >= 8.18.3
-Requires:       perl-Image-ExifTool ImageMagick ffmpeg-free
+Requires:       perl-Image-ExifTool ImageMagick
+# Both Fedora ffmpeg-free and RPM Fusion ffmpeg provide these commands.
+Requires:       /usr/bin/ffmpeg /usr/bin/ffprobe
 Requires:       postgresql postgresql-server postgresql-contrib pgvector >= 0.7
 Requires:       valkey
 Requires:       util-linux systemd
@@ -145,6 +147,9 @@ test -s ../packages/plugin-core/dist/plugin.wasm
 %attr(0750,immich,immich) %dir %{_localstatedir}/cache/immich
 
 %changelog
+* Wed Nov 04 2026 Immich RPM contributors - 3.3.5-4
+- Accept Fedora or RPM Fusion FFmpeg through executable dependencies
+
 * Wed Nov 04 2026 Immich RPM contributors - 3.3.5-3
 - Fetch x86_64 dependencies even when COPR prepares sources on an ARM builder
 - Defer native dependency install scripts to the offline RPM build

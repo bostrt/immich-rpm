@@ -23,5 +23,6 @@ for rpm_path in "$@"; do
   cp --reflink=auto "$rpm_path" "$rpm_dir/"
 done
 "$engine" run --rm -v "$repo:/work:z" -v "$rpm_dir:/rpms:ro,z" \
-  -e "IMMICH_TEST_ML=$with_ml" registry.fedoraproject.org/fedora:44 \
+  -e "IMMICH_TEST_ML=$with_ml" -e "IMMICH_TEST_FFMPEG=${IMMICH_TEST_FFMPEG:-fedora}" \
+  registry.fedoraproject.org/fedora:44 \
   bash /work/tests/container-smoke.sh

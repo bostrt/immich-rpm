@@ -4,7 +4,30 @@ set -euo pipefail
 [[ -f /run/.containerenv || -f /.dockerenv ]] || { echo 'Container required' >&2; exit 1; }
 dnf_options=(--setopt=install_weak_deps=False)
 if [[ ${IMMICH_TEST_OFFLINE:-0} == 1 ]]; then dnf_options+=(--disablerepo='*'); fi
+ffmpeg_provider=${IMMICH_TEST_FFMPEG:-fedora}
+case "$ffmpeg_provider" in
+  fedora) ffmpeg_package=ffmpeg-free ;;
+  rpmfusion)
+    [[ ${IMMICH_TEST_OFFLINE:-0} != 1 ]] || { echo 'RPM Fusion setup requires network access' >&2; exit 2; }
+    ffmpeg_package=ffmpeg
+    fedora_release=$(rpm -E '%{fedora}')
+    dnf -y "${dnf_options[@]}" install \
+      "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$fedora_release.noarch.rpm"
+    # Reproduce installation on a host which already has RPM Fusion FFmpeg.
+    dnf -y "${dnf_options[@]}" install ffmpeg
+    ffmpeg_before=$(rpm -q ffmpeg)
+    ;;
+  *) echo 'IMMICH_TEST_FFMPEG must be fedora or rpmfusion' >&2; exit 2 ;;
+esac
 dnf -y "${dnf_options[@]}" install /rpms/*.rpm python3 curl procps-ng
+[[ $(rpm -qf --qf '%{NAME}' /usr/bin/ffmpeg) == "$ffmpeg_package" ]]
+[[ $(rpm -qf --qf '%{NAME}' /usr/bin/ffprobe) == "$ffmpeg_package" ]]
+if [[ $ffmpeg_provider == rpmfusion ]]; then
+  [[ $(rpm -q ffmpeg) == "$ffmpeg_before" ]]
+fi
+ffmpeg -version
+ffprobe -version
+echo "PASS: FFmpeg commands provided by $ffmpeg_package"
 with_ml=${IMMICH_TEST_ML:-1}
 rpm -q immich
 if [[ $with_ml == 1 ]]; then rpm -q immich-machine-learning; fi
