@@ -74,11 +74,62 @@ copr-cli build immich results/SRPMS/immich-3.3.5-2.fc44.src.rpm \
   --chroot fedora-44-x86_64 --enable-net off
 ```
 
-Replace `immich` with your project name. The scripts do not create projects,
-upload sources, or publish packages. Start with Fedora 44 x86_64; other releases
-and architectures have not been validated. The checked-in specs alone cannot
-be built using COPR's default Git method because the generated dependency
-archives are not checked into Git. Use SRPM uploads for now.
+Replace `immich` with your project name. The local build scripts do not create
+projects, upload sources, or publish packages. Start with Fedora 44 x86_64;
+other releases and architectures have not been validated.
+
+## Publish releases through Git tags
+
+The [bostrt/immich COPR project](https://copr.fedorainfracloud.org/coprs/bostrt/immich/)
+builds the server package from
+[this GitHub repository](https://github.com/bostrt/immich-rpm).
+Its SCM package uses the `make_srpm` method and `.copr/Makefile`.
+COPR runs source preparation inside its network-enabled Mock chroot, downloading
+the same checked sources and locked dependencies as the local container build.
+The subsequent Fedora 44 x86_64 binary build has networking disabled.
+
+Pushing a new tag named `immich-VERSION-RELEASE` starts a build of that tagged
+commit. For example, `immich-3.3.5-2` matches `Version: 3.3.5` and
+`Release: 2%{?dist}` in `immich.spec`. The source target rejects tags that do not
+match the spec. A tag does not update the spec or source checksums for you.
+
+For the next packaging revision of the same upstream release:
+
+1. Increment `Release` in `immich.spec`, update its changelog, and commit the
+   tested changes. An upstream version update also needs the source checksums,
+   patches, and dependency compatibility checked.
+2. Push `main`, then create and push the matching tag, for example:
+
+   ```bash
+   git push origin main
+   git tag -a immich-3.3.5-3 -m 'Immich 3.3.5 packaging release 3'
+   git push origin immich-3.3.5-3
+   ```
+
+3. Follow the build on COPR. A successful build publishes the RPM to its
+   repository automatically. Bump `Release` for fixes rather than moving a
+   published tag or replacing an existing RPM version.
+
+The GitHub webhook subscribes only to the `create` event; ordinary branch
+pushes and pull requests do not trigger builds. COPR selects the `immich`
+package from the tag name. Only tags pushed to GitHub trigger the webhook.
+The optional ML package has no automatic build configuration.
+
+To reproduce the package configuration in a new COPR project:
+
+```bash
+copr-cli add-package-scm OWNER/PROJECT --name immich \
+  --clone-url https://github.com/bostrt/immich-rpm.git \
+  --commit main --spec immich.spec --type git --method make_srpm \
+  --webhook-rebuild on
+```
+
+Then add the project's GitHub integration URL as a GitHub repository webhook,
+using JSON and only **Branch or tag creation**. Keep the URL secret; it contains
+the COPR webhook credential. See the
+[COPR webhook documentation](https://docs.copr.fedorainfracloud.org/user_documentation.html#webhooks).
+
+## Optional ML publication
 
 The optional ML SRPM can be prepared with `--srpm-only --with-ml` and checked
 with `check-srpm.sh` in the same way. **Its bundled media libraries need review
