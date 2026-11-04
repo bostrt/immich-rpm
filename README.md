@@ -46,14 +46,14 @@ preparer's private registry-metadata cache; store integrity checks remain enable
 
 This downloads/prepares dependencies and runs `rpmbuild -bs` inside Podman;
 it does not compile the server or install build tools on the host. It produces
-`results/SRPMS/immich-3.3.5-2.fc44.src.rpm`. The SRPM contains everything needed
+`results/SRPMS/immich-3.3.5-3.fc44.src.rpm`. The SRPM contains everything needed
 for an offline RPM build. COPR uses its own Mock buildroot and the spec's
 `BuildRequires`, not this repository's Containerfile.
 
 Verify the SRPM locally before uploading:
 
 ```bash
-./scripts/check-srpm.sh results/SRPMS/immich-3.3.5-2.fc44.src.rpm
+./scripts/check-srpm.sh results/SRPMS/immich-3.3.5-3.fc44.src.rpm
 ```
 
 The checker starts from Fedora 44, installs RPM build tooling and only the
@@ -70,7 +70,7 @@ With your COPR credentials configured, the manual submission commands are:
 # Once, for a new project:
 copr-cli create immich --chroot fedora-44-x86_64 --enable-net off
 # Upload this source RPM, not the bare spec or a prebuilt binary RPM:
-copr-cli build immich results/SRPMS/immich-3.3.5-2.fc44.src.rpm \
+copr-cli build immich results/SRPMS/immich-3.3.5-3.fc44.src.rpm \
   --chroot fedora-44-x86_64 --enable-net off
 ```
 
@@ -86,11 +86,13 @@ builds the server package from
 Its SCM package uses the `make_srpm` method and `.copr/Makefile`.
 COPR runs source preparation inside its network-enabled Mock chroot, downloading
 the same checked sources and locked dependencies as the local container build.
-The subsequent Fedora 44 x86_64 binary build has networking disabled.
+Source preparation explicitly fetches Linux x86_64/glibc dependencies, even
+when COPR assigns it an ARM builder. Native install scripts run during the
+subsequent Fedora 44 x86_64 binary build, which has networking disabled.
 
 Pushing a new tag named `immich-VERSION-RELEASE` starts a build of that tagged
-commit. For example, `immich-3.3.5-2` matches `Version: 3.3.5` and
-`Release: 2%{?dist}` in `immich.spec`. The source target rejects tags that do not
+commit. For example, `immich-3.3.5-3` matches `Version: 3.3.5` and
+`Release: 3%{?dist}` in `immich.spec`. The source target rejects tags that do not
 match the spec. A tag does not update the spec or source checksums for you.
 
 For the next packaging revision of the same upstream release:
@@ -102,8 +104,8 @@ For the next packaging revision of the same upstream release:
 
    ```bash
    git push origin main
-   git tag -a immich-3.3.5-3 -m 'Immich 3.3.5 packaging release 3'
-   git push origin immich-3.3.5-3
+   git tag -a immich-3.3.5-4 -m 'Immich 3.3.5 packaging release 4'
+   git push origin immich-3.3.5-4
    ```
 
 3. Follow the build on COPR. A successful build publishes the RPM to its
@@ -152,7 +154,7 @@ These commands install runtime packages on the machine that will host Immich.
 Building the RPMs does not run them on your host.
 
 ```bash
-sudo dnf install ./results/immich-3.3.5-2.fc44.x86_64.rpm
+sudo dnf install ./results/immich-3.3.5-3.fc44.x86_64.rpm
 # Optional:
 sudo dnf install ./results/immich-machine-learning-3.3.5-2.fc44.x86_64.rpm
 ```
@@ -271,7 +273,7 @@ for a Fedora distribution submission. Keep the source RPMs with the binaries.
 After building both packages, select the exact RPMs to test:
 
 ```bash
-./scripts/test.sh results/immich-3.3.5-2.fc44.x86_64.rpm \
+./scripts/test.sh results/immich-3.3.5-3.fc44.x86_64.rpm \
   results/immich-machine-learning-3.3.5-2.fc44.x86_64.rpm
 ```
 
@@ -285,7 +287,7 @@ This does not test a booted systemd host, SELinux policy for runtime services,
 every media format, downloaded model inference, or GPU acceleration.
 
 For a server-only COPR build, use
-`./scripts/test.sh --server-only results/immich-3.3.5-2.fc44.x86_64.rpm`.
+`./scripts/test.sh --server-only results/immich-3.3.5-3.fc44.x86_64.rpm`.
 This skips ML installation and checks while exercising the database, UI, upload,
 thumbnail, and metadata paths. You can use explicit paths to RPMs downloaded
 from COPR, too. With no paths, the test accepts only one RPM per requested package

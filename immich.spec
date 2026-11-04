@@ -5,7 +5,7 @@
 
 Name:           immich
 Version:        3.3.5
-Release:        2%{?dist}
+Release:        3%{?dist}
 Summary:        Native photo and video management server
 License:        AGPL-3.0-only AND MIT AND BSD-3-Clause AND Apache-2.0 AND CC-BY-4.0
 URL:            https://immich.app
@@ -145,6 +145,10 @@ test -s ../packages/plugin-core/dist/plugin.wasm
 %attr(0750,immich,immich) %dir %{_localstatedir}/cache/immich
 
 %changelog
+* Wed Nov 04 2026 Immich RPM contributors - 3.3.5-3
+- Fetch x86_64 dependencies even when COPR prepares sources on an ARM builder
+- Defer native dependency install scripts to the offline RPM build
+
 * Wed Nov 04 2026 Immich RPM contributors - 3.3.5-2
 - Include the pinned pnpm build tool for offline COPR builds
 - Require Node ICU data explicitly in minimal build and runtime environments

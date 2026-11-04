@@ -26,16 +26,19 @@ if [[ ! -f sources/immich-geodata.tar.gz ]]; then
   mv sources/immich-geodata.tar.gz{.part,}
 fi
 
-# Changing the lockfile patch or package manager invalidates the fetch archive.
+# Changes to the fetch procedure, lockfile patch or package manager invalidate
+# the archive, including caches prepared before cross-architecture fetching.
 cache="sources/immich-$version-fedora-pnpm-store.tar.gz"
-inputs=$(sha256sum "sources/immich-$version.tar.gz" "sources/$pnpm_archive" patches/0001-sharp-use-fedora-libvips.patch)
+inputs=$(sha256sum "sources/immich-$version.tar.gz" "sources/$pnpm_archive" patches/0001-sharp-use-fedora-libvips.patch scripts/container-build.sh)
 if [[ ! -f $cache || ! -f $cache.inputs ]] || [[ $(cat "$cache.inputs") != "$inputs" ]]; then
   mkdir -p .work/fetch-fedora
   tar -xzf "sources/immich-$version.tar.gz" -C .work/fetch-fedora
   (
     cd ".work/fetch-fedora/immich-$version"
     patch -p1 < "$repo/patches/0001-sharp-use-fedora-libvips.patch"
-    pnpm --store-dir "$repo/.work/pnpm-store" --filter 'immich...' --filter 'immich-web...' --filter '@immich/plugin-core...' fetch --frozen-lockfile
+    # COPR may prepare this x86_64 SRPM on an ARM source builder. Fetch for the
+    # binary target and defer native install scripts until the RPM build.
+    pnpm --store-dir "$repo/.work/pnpm-store" --filter 'immich...' --filter 'immich-web...' --filter '@immich/plugin-core...' fetch --frozen-lockfile --cpu=x64 --os=linux --libc=glibc --ignore-scripts
   )
   tar -czf "$cache.part" -C .work pnpm-store
   mv "$cache.part" "$cache"
