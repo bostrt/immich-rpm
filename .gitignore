@@ -1,0 +1,6 @@
+.work/
+sources/*
+!sources/SHA256SUMS
+results/
+*.log
+__pycache__/

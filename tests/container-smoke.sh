@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# Runs only in a disposable Fedora container; never invoke on the host.
+[[ -f /run/.containerenv || -f /.dockerenv ]] || { echo 'Container required' >&2; exit 1; }
+dnf_options=(--setopt=install_weak_deps=False)
+if [[ ${IMMICH_TEST_OFFLINE:-0} == 1 ]]; then dnf_options+=(--disablerepo='*'); fi
+dnf -y "${dnf_options[@]}" install /work/results/*.x86_64.rpm python3 curl procps-ng
+mkdir -p /run/postgresql /var/lib/pgsql/data /var/cache/immich-machine-learning
+chown postgres:postgres /run/postgresql /var/lib/pgsql/data
+runuser -u postgres -- initdb -D /var/lib/pgsql/data --auth-local=peer --auth-host=scram-sha-256
+runuser -u postgres -- pg_ctl -D /var/lib/pgsql/data -l /var/lib/pgsql/server.log \
+  -o '-c listen_addresses=127.0.0.1 -c unix_socket_directories=/run/postgresql' -w start
+immich-setup
+# Check that explicitly rerunning database setup is safe.
+immich-setup
+valkey-server --bind 127.0.0.1 --port 6379 --daemonize yes
+systemd-analyze verify /usr/lib/systemd/system/immich.service /usr/lib/systemd/system/immich-machine-learning.service
+chown immich-ml:immich-ml /var/cache/immich-machine-learning
+runuser -u immich-ml -- bash -c '
+  set -a
+  source /etc/immich/machine-learning.conf
+  set +a
+  export PATH=/usr/libexec/immich-machine-learning/venv/bin:/usr/bin
+  export PYTHONDONTWRITEBYTECODE=1
+  cd /usr/libexec/immich-machine-learning
+  exec python -m immich_ml
+' > /tmp/immich-ml.log 2>&1 &
+runuser -u immich -- bash -c '
+  set -a
+  source /etc/immich/immich.conf
+  set +a
+  export NODE_ENV=production
+  cd /usr/libexec/immich/server
+  exec node dist/main.js
+' > /tmp/immich-server.log 2>&1 &
+cleanup() {
+  cp /tmp/immich-server.log /work/results/smoke-server.log
+  cp /tmp/immich-ml.log /work/results/smoke-ml.log
+}
+trap cleanup EXIT
+python3 /work/tests/smoke.py
+# Verify actual linkage to Fedora libvips, not an npm binary distribution.
+find /usr/libexec/immich/server -name '*.node' -exec ldd {} \; > /work/results/native-linkage.txt
+if grep -q 'not found' /work/results/native-linkage.txt; then
+  cat /work/results/native-linkage.txt
+  exit 1
+fi
+grep 'libvips-cpp.so' /work/results/native-linkage.txt
+rpm -V immich immich-machine-learning
+echo 'PASS: Fedora RPM installation, database setup, web/API, upload, thumbnail, metadata and ONNX CPU inference' | tee /work/results/smoke-result.txt

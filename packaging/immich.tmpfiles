@@ -1,0 +1,4 @@
+d /var/lib/immich 0750 immich immich -
+d /var/lib/immich/media 0750 immich immich -
+d /var/lib/immich/plugins 0750 immich immich -
+d /var/cache/immich 0750 immich immich -

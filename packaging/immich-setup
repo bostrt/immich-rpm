@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Explicitly prepares only the local immich role/database. Never runs at install.
+set -euo pipefail
+if [[ $EUID -ne 0 ]]; then
+  echo 'Run immich-setup as root, after starting PostgreSQL.' >&2
+  exit 1
+fi
+cd /
+runuser -u postgres -- psql -X --set ON_ERROR_STOP=1 --dbname postgres <<'SQL'
+SELECT 'CREATE ROLE immich LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE'
+WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'immich')\gexec
+SELECT 'CREATE DATABASE immich OWNER immich'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'immich')\gexec
+SQL
+runuser -u postgres -- psql -X --set ON_ERROR_STOP=1 --dbname immich <<'SQL'
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS cube;
+CREATE EXTENSION IF NOT EXISTS earthdistance;
+CREATE EXTENSION IF NOT EXISTS unaccent;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+SQL
+systemd-tmpfiles --create /usr/lib/tmpfiles.d/immich.conf
+echo 'Local database prepared. Start valkey.service and immich.service when ready.'

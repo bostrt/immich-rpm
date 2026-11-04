@@ -1,0 +1,16 @@
+Immich is licensed under AGPL-3.0-only. Its license is installed under
+/usr/share/licenses/immich/. Bundled modules retain their upstream license files.
+
+Reverse-geocoding data is provided by GeoNames (https://www.geonames.org/),
+licensed under Creative Commons Attribution 4.0:
+https://creativecommons.org/licenses/by/4.0/
+This package contains a snapshot of cities500, admin1CodesASCII, admin2Codes,
+and countryInfo downloaded from https://download.geonames.org/export/dump/.
+The snapshot timestamp is in /usr/share/immich/geodata/geodata-date.txt.
+
+Natural Earth 5.1.2 country boundaries are public-domain data:
+https://www.naturalearthdata.com/about/terms-of-use/
+Source: https://github.com/nvkelso/natural-earth-vector/tree/v5.1.2
+
+Machine-learning model weights are downloaded separately at runtime. Each model
+has its own upstream license; model weights are not included in these RPMs.

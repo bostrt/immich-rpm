@@ -1,0 +1,35 @@
+[Unit]
+Description=Immich CPU machine learning
+Documentation=https://docs.immich.app/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=immich-ml
+Group=immich-ml
+EnvironmentFile=/etc/immich/machine-learning.conf
+Environment=PATH=/usr/libexec/immich-machine-learning/venv/bin:/usr/bin
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+Environment=IMMICH_SOURCE_REF=v3.3.5
+WorkingDirectory=/usr/libexec/immich-machine-learning
+ExecStart=/usr/libexec/immich-machine-learning/venv/bin/python -m immich_ml
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=90
+UMask=0027
+CacheDirectory=immich-machine-learning
+CacheDirectoryMode=0750
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
