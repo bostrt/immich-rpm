@@ -1,11 +1,14 @@
 # Immich RPMs for Fedora
 
-Native **Immich 3.3.5** packages for **Fedora 44 x86_64**. Containers are used
+Native **Immich 3.3.5** packages for **Fedora 44 and 45 x86_64**. Containers are used
 only to build and test the RPMs. Installed services run directly under systemd;
 Podman and Docker are not runtime dependencies.
 
 - `immich`: server, web UI, core workflow plugin, and reverse-geocoding data.
 - `immich-machine-learning`: optional CPU service for smart search, faces, and OCR.
+
+COPR publishes the server package. Optional ML has only been tested locally on
+Fedora 44.
 
 ## Build without installing build tools on the host
 
@@ -17,7 +20,7 @@ With rootless Podman already available:
 
 Use `./scripts/build.sh --server-only` to omit ML. RPMs are written to `results/`,
 source RPMs to `results/SRPMS/`, downloads to `sources/`, and temporary build
-files to `.work/`.
+files to `.work/`. Local builder images default to Fedora 44.
 The first build needs network access for Fedora packages, upstream sources, and
 locked npm/Python dependencies. Subsequent RPM builds reuse those caches.
 Budget approximately 15 GB of free disk space and 6 GB of available memory.
@@ -68,15 +71,14 @@ With your COPR credentials configured, the manual submission commands are:
 
 ```bash
 # Once, for a new project:
-copr-cli create immich --chroot fedora-44-x86_64 --enable-net off
+copr-cli create immich --chroot fedora-44-x86_64 --chroot fedora-45-x86_64 --enable-net off
 # Upload this source RPM, not the bare spec or a prebuilt binary RPM:
 copr-cli build immich results/SRPMS/immich-3.3.5-3.fc44.src.rpm \
-  --chroot fedora-44-x86_64 --enable-net off
+  --chroot fedora-44-x86_64 --chroot fedora-45-x86_64 --enable-net off
 ```
 
 Replace `immich` with your project name. The local build scripts do not create
-projects, upload sources, or publish packages. Start with Fedora 44 x86_64;
-other releases and architectures have not been validated.
+projects, upload sources, or publish packages. Only x86_64 is supported.
 
 ## Publish releases through Git tags
 
@@ -88,7 +90,23 @@ COPR runs source preparation inside its network-enabled Mock chroot, downloading
 the same checked sources and locked dependencies as the local container build.
 Source preparation explicitly fetches Linux x86_64/glibc dependencies, even
 when COPR assigns it an ARM builder. Native install scripts run during the
-subsequent Fedora 44 x86_64 binary build, which has networking disabled.
+subsequent binary builds, which have networking disabled.
+
+| COPR target | Status |
+| --- | --- |
+| Fedora 44 x86_64 | Enabled; published package passed container installation and smoke tests |
+| Fedora 45 x86_64 | Enabled; published package passed container installation and smoke tests |
+| Fedora 43 x86_64 | Pending a newer Fedora Node.js RPM; excluded from package builds |
+
+As of 2026-11-04, Fedora 43 provides Node.js 24.14.1, including in updates-testing.
+Immich's locked build dependencies require at least 24.15, and this spec uses
+the tested minimum of 24.18. We are waiting for a Fedora update rather than
+maintaining a Node.js backport. Fedora 43 is not an active build target, and
+the `immich` package also excludes `fedora-43-*` so release tags do not trigger
+builds with unsatisfied dependencies. Once a suitable Node.js RPM is available,
+enable the Fedora 43 chroot, remove that package exclusion, and build/test the
+release on Fedora 43 before advertising support. New Fedora releases are not
+added automatically.
 
 Pushing a new tag named `immich-VERSION-RELEASE` starts a build of that tagged
 commit. For example, `immich-3.3.5-3` matches `Version: 3.3.5` and
@@ -123,7 +141,7 @@ To reproduce the package configuration in a new COPR project:
 copr-cli add-package-scm OWNER/PROJECT --name immich \
   --clone-url https://github.com/bostrt/immich-rpm.git \
   --commit main --spec immich.spec --type git --method make_srpm \
-  --webhook-rebuild on
+  --webhook-rebuild on --chroot-denylist 'fedora-43-*'
 ```
 
 Then add the project's GitHub integration URL as a GitHub repository webhook,
@@ -152,6 +170,15 @@ still apply to all uploaded sources and binaries, including bundled dependencies
 
 These commands install runtime packages on the machine that will host Immich.
 Building the RPMs does not run them on your host.
+
+For the published server package on a supported Fedora release:
+
+```bash
+sudo dnf copr enable bostrt/immich
+sudo dnf install immich
+```
+
+For locally built RPMs:
 
 ```bash
 sudo dnf install ./results/immich-3.3.5-3.fc44.x86_64.rpm
@@ -184,6 +211,11 @@ safe to rerun. It does not initialize a cluster, rewrite `pg_hba.conf`, set a
 database password, or start services. The default application connection uses
 the Unix socket at `/run/postgresql` with peer authentication as the `immich`
 system user. Existing PostgreSQL configurations must allow that local connection.
+
+The default Valkey connection is `127.0.0.1:6379` with no configured password.
+The RPM does not change Valkey's authentication settings. If your existing
+Valkey service requires credentials, configure the matching Immich connection
+settings in `/etc/immich/immich.conf`.
 
 If omitting ML, disable machine learning in Administration → Settings, or set an
 external ML URL there. The default for new installations is `http://127.0.0.1:3003`.
