@@ -7,8 +7,8 @@ Podman and Docker are not runtime dependencies.
 - `immich`: server, web UI, core workflow plugin, and reverse-geocoding data.
 - `immich-machine-learning`: optional CPU service for smart search, faces, and OCR.
 
-COPR publishes the server package. Optional ML has only been tested locally on
-Fedora 44.
+COPR publishes the server package for Fedora 44 and 45, and the optional ML
+package for Fedora 44. ML on Fedora 45 still needs full runtime validation.
 
 ## Build without installing build tools on the host
 
@@ -133,7 +133,9 @@ For the next packaging revision of the same upstream release:
 The GitHub webhook subscribes only to the `create` event; ordinary branch
 pushes and pull requests do not trigger builds. COPR selects the `immich`
 package from the tag name. Only tags pushed to GitHub trigger the webhook.
-The optional ML package has no automatic build configuration.
+The optional ML package uses direct source RPM uploads, as described below.
+Its `immich-machine-learning-VERSION-RELEASE` tags record releases and do not
+trigger automatic builds.
 
 To reproduce the package configuration in a new COPR project:
 
@@ -152,14 +154,31 @@ the COPR webhook credential. See the
 ## Optional ML publication
 
 The optional ML SRPM can be prepared with `--srpm-only --with-ml` and checked
-with `check-srpm.sh` in the same way. **Its bundled media libraries need review
-before public COPR submission.** The pinned `opencv-python-headless` wheel
-contains its own FFmpeg (`libavcodec`, `libavformat`, etc.) and OpenSSL 1.1.1k,
-independent of Fedora's `ffmpeg-free` and OpenSSL updates. Its FFmpeg build
-configuration does not show Fedora's codec restrictions. This is a concrete
-redistribution and maintenance concern, not a determination of COPR acceptance.
-Review the bundled codecs/licenses or replace the wheel with a suitable build
-before publishing ML. A successful offline rebuild does not resolve that review.
+with `check-srpm.sh` in the same way. Release `3.3.6-2` uses Fedora's OpenCV and
+NumPy. It excludes the `opencv-python-headless`
+wheel and its private FFmpeg/OpenSSL libraries from both the runtime and the
+dependency cache. The other Python dependencies remain bundled.
+
+The Fedora 44 RPM passed a container upgrade from `3.3.6-1`,
+preserving a modified configuration and cache file. Service startup, the health
+endpoint, CPU ONNX inference, native library linkage, and eight OpenCV/image
+processing checks passed. A clean, unprivileged rebuild with networking disabled
+also passed. Laptop testing against a remote Immich server exercised smart
+search, face detection/recognition and OCR, with no errors or automatic restarts
+observed in the service logs.
+
+Publish the tested source RPM to the Fedora 44 target explicitly:
+
+```bash
+./scripts/check-srpm.sh results/SRPMS/immich-machine-learning-3.3.6-2.fc44.src.rpm
+copr-cli build bostrt/immich results/SRPMS/immich-machine-learning-3.3.6-2.fc44.src.rpm \
+  --chroot fedora-44-x86_64 --enable-net off
+```
+
+Prepare the ML dependency cache on the target Fedora release: its default
+Python ABI determines which native wheels are downloaded. A Fedora 44 cache is
+not a validated Fedora 45 build input. Keep ML submissions limited to Fedora 44
+until the full Python 3.15 service has been built and tested for Fedora 45.
 
 [COPR accepts direct SRPM uploads](https://docs.copr.fedorainfracloud.org/user_documentation.html#direct-upload)
 and does not require full Fedora Packaging Guidelines compliance, but its
@@ -176,6 +195,8 @@ For the published server package on a supported Fedora release:
 ```bash
 sudo dnf copr enable bostrt/immich
 sudo dnf install immich
+# Optional CPU ML service, currently available on Fedora 44:
+sudo dnf install immich-machine-learning
 ```
 
 For locally built RPMs:
@@ -183,7 +204,7 @@ For locally built RPMs:
 ```bash
 sudo dnf install ./results/immich-3.3.6-1.fc44.x86_64.rpm
 # Optional:
-sudo dnf install ./results/immich-machine-learning-3.3.6-1.fc44.x86_64.rpm
+sudo dnf install ./results/immich-machine-learning-3.3.6-2.fc44.x86_64.rpm
 ```
 
 For a **new** PostgreSQL installation, initialize its cluster once:
@@ -268,9 +289,10 @@ HTTPS access for that first use.
 | Image processing | Fedora `vips`, `ImageMagick` |
 | Metadata | Fedora `perl-Image-ExifTool` |
 | Video | `/usr/bin/ffmpeg` and `/usr/bin/ffprobe`, supplied by Fedora `ffmpeg-free` or an installed RPM Fusion `ffmpeg` |
-| Python interpreter | Fedora `python3.13` |
+| Python interpreter | Fedora default `python3` (3.14 on Fedora 44) |
+| ML image processing | Fedora `python3-opencv` and `python3-numpy` |
 | Application JavaScript | Private modules from the upstream lockfile, with the Sharp pin below |
-| Python ML stack | Private CPU environment from upstream `uv.lock` |
+| Python ML stack | Private CPU environment from upstream `uv.lock`, except system OpenCV and NumPy |
 
 Immich 3.3.6 supports `DB_VECTOR_EXTENSION=pgvector`, avoiding a separate
 VectorChord build. This selects pgvector indexes; it does not use VectorChord's
@@ -282,12 +304,17 @@ declared `^0.35.3` range. That version supports Fedora's libvips **8.18.3**;
 upstream's locked Sharp 0.35.5 requires libvips 8.18.7. The vendored ExifTool
 executable and prebuilt bcrypt binaries are removed from the runtime package.
 
-Fedora's ML packages are too old for this Immich release (notably ONNX and ONNX
-Runtime), and the pinned `immich-model` library requires Python below 3.14.
-The optional RPM therefore uses Fedora Python 3.13 with upstream's pinned wheels,
-including CPU ONNX Runtime 1.30.0. Immich 3.3.6 disables ONNX Runtime telemetry
-by default. The RPM does not replace the system Python packages and does not
-install CUDA, ROCm, or OpenVINO runtimes.
+Fedora's ONNX and ONNX Runtime packages are too old for this Immich release, so
+the optional RPM retains upstream's pinned wheels, including CPU ONNX Runtime
+1.30.0. Its private environment can import system packages and explicitly skips
+the OpenCV and NumPy wheels so Fedora's packages supply those imports. Fedora's
+OpenCV package brings a substantial set of additional library dependencies.
+
+The pinned `immich-model` library declares Python `<3.14`. The builder uses uv,
+which ignores dependency Python upper bounds; installing successfully is not an
+upstream compatibility guarantee. This release was tested with the default
+Fedora 44 Python 3.14 runtime. Immich 3.3.6 disables ONNX Runtime telemetry by
+default. The RPM does not install CUDA, ROCm, or OpenVINO runtimes.
 
 Fedora's media packages differ from Immich's custom upstream media builds.
 Codec support, especially H.264/H.265/HEIC, depends on the installed media libraries.
@@ -309,7 +336,7 @@ After building both packages, select the exact RPMs to test:
 
 ```bash
 ./scripts/test.sh results/immich-3.3.6-1.fc44.x86_64.rpm \
-  results/immich-machine-learning-3.3.6-1.fc44.x86_64.rpm
+  results/immich-machine-learning-3.3.6-2.fc44.x86_64.rpm
 ```
 
 The test installs the RPMs into a clean Fedora 44 container, initializes a fresh

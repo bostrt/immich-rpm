@@ -10,20 +10,29 @@
 
 Name:           immich-machine-learning
 Version:        3.3.6
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Optional native CPU machine learning service for Immich
 License:        AGPL-3.0-only AND MIT AND Apache-2.0 AND BSD-3-Clause
 URL:            https://immich.app
 Source0:        https://github.com/immich-app/immich/archive/refs/tags/v%{version}.tar.gz#/immich-%{version}.tar.gz
-Source1:        immich-%{version}-uv-cache.tar.gz
+Source1:        immich-%{version}-system-opencv-uv-cache.tar.gz
 Source2:        immich-machine-learning.service
 Source3:        machine-learning.conf
 Source4:        immich-machine-learning.sysusers
 ExclusiveArch:  x86_64
-BuildRequires:  python3.13 uv systemd-rpm-macros
+BuildRequires:  python3-devel uv systemd-rpm-macros
+BuildRequires:  python3-opencv >= 4.13
+BuildRequires:  python3-opencv < 5
+BuildRequires:  python3-numpy >= 1:2.4
+BuildRequires:  python3-numpy < 1:3
 # The import check loads native wheels even in a minimal buildroot.
-BuildRequires:  libstdc++ libgcc libgomp zlib tar gzip findutils
-Requires:       python3.13 glibc libstdc++ libgcc libgomp zlib
+BuildRequires:  libstdc++ libgcc libgomp zlib geos tar gzip findutils
+Requires:       python(abi) = %{python3_version}
+Requires:       python3-opencv >= 4.13
+Requires:       python3-opencv < 5
+Requires:       python3-numpy >= 1:2.4
+Requires:       python3-numpy < 1:3
+Requires:       glibc libstdc++ libgcc libgomp zlib geos
 Requires:       systemd
 Requires(pre):  systemd
 Requires(post): systemd
@@ -32,9 +41,10 @@ Requires(postun): systemd
 
 %description
 Optional CPU service for Immich smart search, face recognition and OCR.
-Uses Fedora's Python 3.13 interpreter with a private environment populated
-from Immich's pinned uv.lock. The ONNX stack is newer than Fedora's packaged
-versions. Model weights are downloaded on demand to the service cache.
+Uses Fedora's default Python, OpenCV and NumPy packages. Other Python
+dependencies are installed in a private environment from Immich's pinned
+uv.lock. The ONNX stack is newer than Fedora's packaged versions. Model
+weights are downloaded on demand to the service cache.
 
 %prep
 %setup -q -n immich-%{version}
@@ -42,11 +52,16 @@ tar -xzf %{SOURCE1}
 
 %build
 # Materialize from the source RPM's cache without network access.
-export UV_CACHE_DIR="$PWD/uv-cache"
+export UV_CACHE_DIR="$PWD/uv-cache-system-opencv"
 export UV_PYTHON_DOWNLOADS=never
 export UV_PROJECT_ENVIRONMENT="$PWD/ml-venv"
-uv sync --project machine-learning --python /usr/bin/python3.13 --offline \
-  --frozen --extra cpu --no-dev --no-install-project --link-mode copy
+# OpenCV's Fedora bindings match the default Python ABI. Use Fedora's NumPy
+# with them; installing upstream's wheel would shadow these system packages.
+uv venv --python /usr/bin/python3 --system-site-packages "$UV_PROJECT_ENVIRONMENT"
+uv sync --project machine-learning --python /usr/bin/python3 --offline \
+  --frozen --extra cpu --no-dev --no-install-project --link-mode copy \
+  --no-install-package opencv-python-headless --no-install-package opencv-python \
+  --no-install-package numpy
 
 %install
 install -d %{buildroot}%{_libexecdir}/immich-machine-learning
@@ -61,7 +76,22 @@ install -Dpm 644 %{SOURCE4} %{buildroot}%{_sysusersdir}/immich-machine-learning.
 install -d %{buildroot}%{_localstatedir}/cache/immich-machine-learning
 
 %check
-PYTHONPATH=machine-learning ml-venv/bin/python -c 'import immich_ml.main; import onnxruntime as ort; assert "CPUExecutionProvider" in ort.get_available_providers(); print(ort.__version__)'
+PYTHONPATH=machine-learning ml-venv/bin/python - <<'PY'
+from pathlib import Path
+import sys
+import cv2
+import numpy
+import onnxruntime as ort
+import immich_ml.main
+
+assert "CPUExecutionProvider" in ort.get_available_providers()
+for module in (cv2, numpy):
+    path = Path(module.__file__).resolve()
+    assert not path.is_relative_to(Path(sys.prefix)), path
+    assert str(path).startswith("/usr/lib"), path
+    print(module.__name__, module.__version__, path)
+print("ONNX Runtime", ort.__version__)
+PY
 
 %pre
 %sysusers_create_compat %{SOURCE4}
@@ -85,6 +115,11 @@ PYTHONPATH=machine-learning ml-venv/bin/python -c 'import immich_ml.main; import
 %attr(0750,immich-ml,immich-ml) %dir %{_localstatedir}/cache/immich-machine-learning
 
 %changelog
+* Thu Nov 05 2026 Immich RPM contributors - 3.3.6-2
+- Use Fedora's default Python, OpenCV and NumPy in the ML service
+- Exclude OpenCV and NumPy wheels from the private runtime environment
+- Exclude the OpenCV wheel and its media libraries from the source cache
+
 * Wed Nov 04 2026 Immich RPM contributors - 3.3.6-1
 - Update to Immich 3.3.6, disabling ONNX Runtime telemetry by default
 
