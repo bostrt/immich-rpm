@@ -34,6 +34,8 @@ fi
 if $with_ml; then
   "$engine" build --build-arg "FEDORA_VERSION=$fedora" -t "$ml_image" -f Containerfile.ml .
   "$engine" run --rm "${userns[@]}" --user "$(id -u):$(id -g)" \
-    -v "$PWD:/work:z" -e HOME=/work/.work/home "$ml_image" \
+    -v "$PWD:/work:z" -e HOME=/work/.work/home \
+    -e "UV_CONCURRENT_BUILDS=${UV_CONCURRENT_BUILDS:-2}" \
+    -e "CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2}" "$ml_image" \
     bash scripts/container-build-ml.sh "$mode"
 fi

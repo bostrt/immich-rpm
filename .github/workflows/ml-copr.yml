@@ -1,0 +1,44 @@
+name: Publish ML to COPR
+
+on:
+  push:
+    tags:
+      - 'immich-machine-learning-*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.repository == 'bostrt/immich-rpm' && github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        fedora: ['44', '45']
+    concurrency:
+      group: ml-copr-${{ github.ref }}-fedora-${{ matrix.fedora }}
+      cancel-in-progress: false
+    env:
+      CONTAINER_ENGINE: docker
+      FEDORA_VERSION: ${{ matrix.fedora }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Check release tag
+        run: bash .copr/check-ml-tag.sh "$RELEASE_TAG"
+      - name: Prepare source RPM for this Fedora release
+        run: ./scripts/build.sh --srpm-only --ml-only
+      - name: Submit to COPR and wait for the binary build
+        env:
+          COPR_CONFIG: ${{ secrets.COPR_CONFIG }}
+        run: |
+          test -n "$COPR_CONFIG" || { echo 'COPR_CONFIG secret is missing' >&2; exit 1; }
+          docker run --rm --user 0:0 \
+            -v "$PWD:/work:ro" -e FEDORA_VERSION -e RELEASE_TAG -e COPR_CONFIG \
+            "localhost/immich-rpm-ml-builder:fc$FEDORA_VERSION" \
+            bash .copr/publish-ml.sh

@@ -221,9 +221,8 @@ For the next packaging revision of the same upstream release:
 The GitHub webhook subscribes only to the `create` event; ordinary branch
 pushes and pull requests do not trigger builds. COPR selects the `immich`
 package from the tag name. Only tags pushed to GitHub trigger the webhook.
-The optional ML package uses direct source RPM uploads, as described below.
-Its `immich-machine-learning-VERSION-RELEASE` tags record releases and do not
-trigger automatic builds.
+ML release tags use a separate GitHub Actions workflow, described below, to
+prepare and submit a source RPM for each Fedora release.
 
 To reproduce the package configuration in a new COPR project:
 
@@ -267,15 +266,55 @@ retaining its bundled ONNX Runtime 1.30.0.
 The published Fedora 44 release `3.3.6-2` passed a container upgrade from
 `3.3.6-1`, preserving modified configuration and cache files. Laptop testing
 against a remote Immich server exercised smart search, face detection/recognition
-and OCR. Release `3.3.6-3` and the Fedora 45 ML package still need COPR
-publication; pushing the code to GitHub does not publish ML binaries.
+and OCR. ML publication is driven by release tags; ordinary branch pushes do
+not publish ML binaries.
 
 Prepare each ML dependency cache and source RPM on its target Fedora release.
 The default Python ABI determines which native wheels are downloaded or built.
 Caches and build directories include the Fedora release and architecture; do
 not submit a Fedora 44 ML source RPM to the Fedora 45 chroot or vice versa.
 
-Build and verify both targets before submitting their source RPMs separately:
+### Automatic ML releases
+
+The [Publish ML to COPR workflow](.github/workflows/ml-copr.yml) runs when a tag
+named `immich-machine-learning-VERSION-RELEASE` is pushed. It verifies that the
+tag matches `immich-machine-learning.spec`, prepares source RPMs in separate
+Fedora 44 and Fedora 45 x86_64 containers, and submits each to its matching COPR
+chroot with binary-build networking disabled. The workflow waits for COPR and
+fails if either target fails. Source compilation is limited to two concurrent
+builds and two Cargo jobs to fit the GitHub runner.
+
+This uses GitHub Actions instead of COPR's SCM auto-rebuild switch: the standard
+COPR Git webhook prepares one source RPM for all chroots, while the ML caches
+must be prepared for each target Python ABI. The existing COPR webhook handles
+server tags. Both workflows publish only release tags, not branch pushes or
+pull requests.
+
+For each ML release, update `Version` or `Release` and its changelog, build and
+test the affected targets, commit and push `main`, then push the matching tag:
+
+```bash
+git tag -a immich-machine-learning-3.3.6-3 -m 'Immich ML 3.3.6 packaging release 3'
+git push origin immich-machine-learning-3.3.6-3
+```
+
+Use a new release number for changes after publication. The workflow can also
+be dispatched against an existing release tag to retry a failed release; avoid
+rerunning a successful publication. Follow its matrix jobs in GitHub Actions
+and the linked builds in COPR.
+
+The repository's encrypted `COPR_CONFIG` Actions secret supplies authentication
+only to the submission step. To configure or renew it from a working local COPR
+configuration without printing its contents:
+
+```bash
+gh secret set COPR_CONFIG --repo bostrt/immich-rpm < ~/.config/copr
+```
+
+### Manual ML submission
+
+As a fallback, build and verify both targets, then submit their source RPMs
+separately:
 
 ```bash
 FEDORA_VERSION=44 ./scripts/build.sh --srpm-only --ml-only
