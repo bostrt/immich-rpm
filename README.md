@@ -13,8 +13,10 @@ upstream Immich. The packaged upstream version is **Immich 3.3.6**.
 | `immich` | Server, web UI, core workflow plugin, and reverse-geocoding data | Fedora 44 and 45 x86_64 |
 | `immich-machine-learning` | Optional CPU service for smart search, faces, and OCR | Fedora 44 x86_64 |
 
-Fedora 43 is not supported. Machine learning on Fedora 45 still needs full
-runtime validation; use an external ML service or disable ML there.
+Fedora 43 is not supported. Fedora 45 machine learning is available as a
+[local build](DEVELOPMENT.md#build-without-installing-build-tools-on-the-host)
+using Fedora's ONNX Runtime package; COPR publication is pending. Until it is
+published, build the ML RPM locally, use an external ML service, or disable ML.
 
 - [Install from COPR](#install-from-copr)
 - [Configure Immich](#configuration)

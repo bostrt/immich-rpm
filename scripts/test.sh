@@ -2,6 +2,7 @@
 set -euo pipefail
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 engine=${CONTAINER_ENGINE:-podman}
+fedora=${FEDORA_VERSION:-44}
 with_ml=1
 if [[ ${1:-} == --server-only ]]; then with_ml=0; shift; fi
 if [[ $# == 0 ]]; then
@@ -24,5 +25,5 @@ for rpm_path in "$@"; do
 done
 "$engine" run --rm -v "$repo:/work:z" -v "$rpm_dir:/rpms:ro,z" \
   -e "IMMICH_TEST_ML=$with_ml" -e "IMMICH_TEST_FFMPEG=${IMMICH_TEST_FFMPEG:-fedora}" \
-  registry.fedoraproject.org/fedora:44 \
+  "registry.fedoraproject.org/fedora:$fedora" \
   bash /work/tests/container-smoke.sh

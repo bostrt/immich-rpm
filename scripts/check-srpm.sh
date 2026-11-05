@@ -8,11 +8,12 @@ fi
 srpm=$(realpath "$1")
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 engine=${CONTAINER_ENGINE:-podman}
+fedora=${FEDORA_VERSION:-44}
 mkdir -p .work results
 context=$(mktemp -d "$PWD/.work/check-srpm.XXXXXX")
 cp --reflink=auto "$srpm" "$context/package.src.rpm"
-image="localhost/immich-rpm-check:$(basename "$srpm" .src.rpm)"
-"$engine" build -t "$image" -f Containerfile.check "$context"
+image="localhost/immich-rpm-check:$(basename "$srpm" .src.rpm)-fc$fedora"
+"$engine" build --build-arg "FEDORA_VERSION=$fedora" -t "$image" -f Containerfile.check "$context"
 userns=()
 if [[ $engine == *podman ]]; then userns=(--userns=keep-id); fi
 # Expand the following shell variables inside the container.

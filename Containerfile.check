@@ -1,4 +1,5 @@
-FROM registry.fedoraproject.org/fedora:44
+ARG FEDORA_VERSION=44
+FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION}
 # This deliberately starts without the convenience builder's application stack.
 COPY package.src.rpm /tmp/package.src.rpm
 RUN dnf -y --setopt=install_weak_deps=False install rpm-build redhat-rpm-config dnf5-plugins && \

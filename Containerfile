@@ -1,4 +1,5 @@
-FROM registry.fedoraproject.org/fedora:44
+ARG FEDORA_VERSION=44
+FROM registry.fedoraproject.org/fedora:${FEDORA_VERSION}
 RUN dnf -y upgrade --refresh && \
     dnf -y install rpm-build rpmdevtools redhat-rpm-config systemd-rpm-macros \
       gcc-c++ make python3 python3-pip nodejs24 nodejs24-npm nodejs24-devel \

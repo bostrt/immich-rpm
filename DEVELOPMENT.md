@@ -5,7 +5,7 @@ publication. For installation and day-to-day administration, see the
 [user guide](README.md).
 
 Commands below run from the repository root. Examples use the current specs:
-Immich server `3.3.6-1` and machine learning `3.3.6-2`.
+Immich server `3.3.6-1` and machine learning `3.3.6-3`.
 
 - [Build locally](#build-without-installing-build-tools-on-the-host)
 - [Install local RPMs](#install-locally-built-rpms)
@@ -27,6 +27,15 @@ With rootless Podman already available:
 Use `./scripts/build.sh --server-only` to omit ML. RPMs are written to `results/`,
 source RPMs to `results/SRPMS/`, downloads to `sources/`, and temporary build
 files to `.work/`. Local builder images default to Fedora 44.
+Set `FEDORA_VERSION=45` to build for Fedora 45. Use `--ml-only` to build just
+the optional ML package without building the server:
+
+```bash
+FEDORA_VERSION=45 ./scripts/build.sh --ml-only
+```
+
+ML dependency caches and build directories are separate for each Fedora release
+and architecture. Always prepare an ML source RPM on its intended target release.
 The first build needs network access for Fedora packages, upstream sources, and
 locked npm/Python dependencies. Subsequent RPM builds reuse those caches.
 Budget approximately 15 GB of free disk space and 6 GB of available memory.
@@ -54,7 +63,7 @@ Use explicit filenames so you install the intended release:
 ```bash
 sudo dnf install ./results/immich-3.3.6-1.fc44.x86_64.rpm
 # Optional:
-sudo dnf install ./results/immich-machine-learning-3.3.6-2.fc44.x86_64.rpm
+sudo dnf install ./results/immich-machine-learning-3.3.6-3.fc44.x86_64.rpm
 ```
 
 Then follow the [database and service setup](README.md#initialize-the-database)
@@ -78,7 +87,8 @@ Verify the SRPM locally before uploading:
 ./scripts/check-srpm.sh results/SRPMS/immich-3.3.6-1.fc44.src.rpm
 ```
 
-The checker starts from Fedora 44, installs RPM build tooling and only the
+The checker defaults to Fedora 44; set `FEDORA_VERSION=45` when checking a
+Fedora 45 source RPM. It installs RPM build tooling and only the
 SRPM's declared build dependencies, then rebuilds as an unprivileged user with
 `--network=none`. It writes the binary RPM and rebuild log to `results/`. This
 catches dependencies accidentally supplied by the convenience builder, but it
@@ -105,10 +115,11 @@ After building both packages, select the exact RPMs to test:
 
 ```bash
 ./scripts/test.sh results/immich-3.3.6-1.fc44.x86_64.rpm \
-  results/immich-machine-learning-3.3.6-2.fc44.x86_64.rpm
+  results/immich-machine-learning-3.3.6-3.fc44.x86_64.rpm
 ```
 
-The test installs the RPMs into a clean Fedora 44 container, initializes a fresh
+The test defaults to a clean Fedora 44 container; set `FEDORA_VERSION=45`
+when testing Fedora 45 RPMs. It installs the packages, initializes a fresh
 PostgreSQL cluster, runs database setup twice, starts the services' executables
 as their service users, and checks the UI/API, administrator login, photo upload,
 thumbnail generation, metadata extraction, ML health, ONNX telemetry disabled
@@ -139,6 +150,23 @@ by earlier builds.
 The initial Fedora 44 build passed these checks. The dependency-cache rebuild
 was also verified in a container with networking disabled. Detailed service logs
 and the test result are included in `results/` after running the test.
+
+For ML-only validation, run:
+
+```bash
+FEDORA_VERSION=45 ./scripts/test-ml.sh results/immich-machine-learning-3.3.6-3.fc45.x86_64.rpm
+# Also download and run real CLIP, face and OCR models (requires network access):
+FEDORA_VERSION=45 IMMICH_TEST_MODELS=1 ./scripts/test-ml.sh \
+  results/immich-machine-learning-3.3.6-3.fc45.x86_64.rpm
+```
+
+This checks the package in a clean container, including system/private Python
+module origins, native library linkage, OpenCV image-processing helpers, service
+startup as `immich-ml`, and CPU inference. Model tests send CLIP and OCR requests
+through HTTP and exercise face detection and recognition with synthetic inputs;
+they validate execution, not recognition accuracy. Logs go to `results/ml-fc45/`
+(or `results/ml-fc44/`). These tests do not boot systemd or validate host SELinux
+policy or GPU acceleration.
 
 ## Publish releases through Git tags
 
@@ -213,32 +241,53 @@ the COPR webhook credential. See the
 
 ## Optional ML publication
 
-The optional ML SRPM can be prepared with `--srpm-only --with-ml` and checked
-with `check-srpm.sh` in the same way. Release `3.3.6-2` uses Fedora's OpenCV and
-NumPy. It excludes the `opencv-python-headless` wheel and its private
-FFmpeg/OpenSSL libraries from both the runtime and the dependency cache.
-The other Python dependencies remain bundled.
+The optional ML SRPM can be prepared with `--srpm-only --ml-only` and checked
+with `check-srpm.sh`. Release `3.3.6-3` supports local builds for Fedora 44 and
+45. Both use Fedora's OpenCV and NumPy, excluding their wheels from the private
+runtime. The OpenCV wheel and its private FFmpeg/OpenSSL libraries are also
+excluded from the source cache. Fedora 45 additionally uses the system
+`python3-onnxruntime` package; Fedora 44 retains the pinned ONNX Runtime wheel.
 
-The Fedora 44 RPM passed a container upgrade from `3.3.6-1`,
-preserving a modified configuration and cache file. Service startup, the health
-endpoint, CPU ONNX inference, native library linkage, and eight OpenCV/image
-processing checks passed. A clean, unprivileged rebuild with networking disabled
-also passed. Laptop testing against a remote Immich server exercised smart
-search, face detection/recognition and OCR, with no errors or automatic restarts
-observed in the service logs.
+Fedora 45's Python 3.15 cannot install upstream's locked ONNX Runtime 1.30.0
+wheel. Its system ONNX Runtime 1.26.0 meets Immich's declared CPU requirement
+of `>=1.23.2,<2`. The separate ONNX Python library remains bundled at 1.22.0,
+since Fedora 45 supplies 1.21.0 and Immich requires at least 1.22.0.
 
-Publish the tested source RPM to the Fedora 44 target explicitly:
+The Fedora 45 release `3.3.6-3` passed clean container installation, package
+integrity and native library linkage checks, eight OpenCV/image-processing
+checks, service startup as `immich-ml`, and ONNX CPU inference. Real CLIP text
+and image inference, face detection/recognition, and OCR inference also passed
+with downloaded models and synthetic inputs. These checks used Python 3.15.0,
+system ONNX Runtime 1.26.0, OpenCV 4.13.0, and NumPy 2.5.4. A clean,
+unprivileged source RPM rebuild with networking disabled also passed.
+The Fedora 44 release `3.3.6-3` passed clean installation, the same eight
+image-processing checks, service startup, and a small CPU inference graph,
+retaining its bundled ONNX Runtime 1.30.0.
+
+The published Fedora 44 release `3.3.6-2` passed a container upgrade from
+`3.3.6-1`, preserving modified configuration and cache files. Laptop testing
+against a remote Immich server exercised smart search, face detection/recognition
+and OCR. Release `3.3.6-3` and the Fedora 45 ML package still need COPR
+publication; pushing the code to GitHub does not publish ML binaries.
+
+Prepare each ML dependency cache and source RPM on its target Fedora release.
+The default Python ABI determines which native wheels are downloaded or built.
+Caches and build directories include the Fedora release and architecture; do
+not submit a Fedora 44 ML source RPM to the Fedora 45 chroot or vice versa.
+
+Build and verify both targets before submitting their source RPMs separately:
 
 ```bash
-./scripts/check-srpm.sh results/SRPMS/immich-machine-learning-3.3.6-2.fc44.src.rpm
-copr-cli build bostrt/immich results/SRPMS/immich-machine-learning-3.3.6-2.fc44.src.rpm \
-  --chroot fedora-44-x86_64 --enable-net off
-```
+FEDORA_VERSION=44 ./scripts/build.sh --srpm-only --ml-only
+FEDORA_VERSION=44 ./scripts/check-srpm.sh results/SRPMS/immich-machine-learning-3.3.6-3.fc44.src.rpm
+FEDORA_VERSION=45 ./scripts/build.sh --srpm-only --ml-only
+FEDORA_VERSION=45 ./scripts/check-srpm.sh results/SRPMS/immich-machine-learning-3.3.6-3.fc45.src.rpm
 
-Prepare the ML dependency cache on the target Fedora release: its default
-Python ABI determines which native wheels are downloaded. A Fedora 44 cache is
-not a validated Fedora 45 build input. Keep ML submissions limited to Fedora 44
-until the full Python 3.15 service has been built and tested for Fedora 45.
+copr-cli build bostrt/immich results/SRPMS/immich-machine-learning-3.3.6-3.fc44.src.rpm \
+  --chroot fedora-44-x86_64 --enable-net off
+copr-cli build bostrt/immich results/SRPMS/immich-machine-learning-3.3.6-3.fc45.src.rpm \
+  --chroot fedora-45-x86_64 --enable-net off
+```
 
 [COPR accepts direct SRPM uploads](https://docs.copr.fedorainfracloud.org/user_documentation.html#direct-upload)
 and does not require full Fedora Packaging Guidelines compliance, but its
@@ -255,10 +304,10 @@ still apply to all uploaded sources and binaries, including bundled dependencies
 | Image processing | Fedora `vips`, `ImageMagick` |
 | Metadata | Fedora `perl-Image-ExifTool` |
 | Video | `/usr/bin/ffmpeg` and `/usr/bin/ffprobe`, supplied by Fedora `ffmpeg-free` or an installed RPM Fusion `ffmpeg` |
-| Python interpreter | Fedora default `python3` (3.14 on Fedora 44) |
+| Python interpreter | Fedora default `python3` (3.14 on Fedora 44; 3.15 on Fedora 45) |
 | ML image processing | Fedora `python3-opencv` and `python3-numpy` |
 | Application JavaScript | Private modules from the upstream lockfile, with the Sharp pin below |
-| Python ML stack | Private CPU environment from upstream `uv.lock`, except system OpenCV and NumPy |
+| Python ML stack | Private CPU environment from upstream `uv.lock`, except system OpenCV/NumPy and Fedora 45 ONNX Runtime |
 
 Immich 3.3.6 supports `DB_VECTOR_EXTENSION=pgvector`, avoiding a separate
 VectorChord build. This selects pgvector indexes; it does not use VectorChord's
@@ -270,17 +319,19 @@ declared `^0.35.3` range. That version supports Fedora's libvips **8.18.3**;
 upstream's locked Sharp 0.35.5 requires libvips 8.18.7. The vendored ExifTool
 executable and prebuilt bcrypt binaries are removed from the runtime package.
 
-Fedora's ONNX and ONNX Runtime packages are too old for this Immich release, so
-the optional RPM retains upstream's pinned wheels, including CPU ONNX Runtime
-1.30.0. Its private environment can import system packages and explicitly skips
-the OpenCV and NumPy wheels so Fedora's packages supply those imports. Fedora's
-OpenCV package brings a substantial set of additional library dependencies.
+The optional RPM retains upstream's ONNX 1.22.0 wheel on both releases. Fedora
+44 also bundles CPU ONNX Runtime 1.30.0 because its system version is too old.
+Fedora 45 uses system ONNX Runtime 1.26.0 instead, skipping the locked wheel.
+The private environment can import system packages and skips OpenCV and NumPy
+wheels on both releases. Fedora's OpenCV package brings a substantial set of
+additional library dependencies.
 
 The pinned `immich-model` library declares Python `<3.14`. The builder uses uv,
 which ignores dependency Python upper bounds; installing successfully is not an
 upstream compatibility guarantee. This release was tested with the default
-Fedora 44 Python 3.14 runtime. Immich 3.3.6 disables ONNX Runtime telemetry by
-default. The RPM does not install CUDA, ROCm, or OpenVINO runtimes.
+Fedora Python runtimes; the container checks are described above. Immich 3.3.6
+disables ONNX Runtime telemetry by default. The RPM does not install CUDA,
+ROCm, or OpenVINO runtimes.
 
 Fedora's media packages differ from Immich's custom upstream media builds.
 Codec support, especially H.264/H.265/HEIC, depends on the installed media libraries.
