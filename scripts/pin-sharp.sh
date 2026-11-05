@@ -8,8 +8,9 @@ if ! command -v pnpm > /dev/null; then
   exit 1
 fi
 mkdir -p .work/pin-sharp patches
-tar -xzf sources/immich-3.3.5.tar.gz -C .work/pin-sharp
-cd .work/pin-sharp/immich-3.3.5
+version=$(rpmspec -q --srpm --qf '%{VERSION}' immich.spec)
+tar -xzf "sources/immich-$version.tar.gz" -C .work/pin-sharp
+cd ".work/pin-sharp/immich-$version"
 cp pnpm-workspace.yaml pnpm-workspace.yaml.orig
 cp pnpm-lock.yaml pnpm-lock.yaml.orig
 sed -i 's/sharp: \^0.35.3/sharp: 0.35.3/' pnpm-workspace.yaml

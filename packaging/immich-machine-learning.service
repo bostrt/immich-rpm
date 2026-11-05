@@ -12,7 +12,7 @@ EnvironmentFile=/etc/immich/machine-learning.conf
 Environment=PATH=/usr/libexec/immich-machine-learning/venv/bin:/usr/bin
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=PYTHONUNBUFFERED=1
-Environment=IMMICH_SOURCE_REF=v3.3.5
+Environment=IMMICH_SOURCE_REF=v3.3.6
 WorkingDirectory=/usr/libexec/immich-machine-learning
 ExecStart=/usr/libexec/immich-machine-learning/venv/bin/python -m immich_ml
 Restart=on-failure

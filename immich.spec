@@ -4,8 +4,8 @@
 %global __requires_exclude ^(npm|nodejs)[(]
 
 Name:           immich
-Version:        3.3.5
-Release:        4%{?dist}
+Version:        3.3.6
+Release:        1%{?dist}
 Summary:        Native photo and video management server
 License:        AGPL-3.0-only AND MIT AND BSD-3-Clause AND Apache-2.0 AND CC-BY-4.0
 URL:            https://immich.app
@@ -147,6 +147,9 @@ test -s ../packages/plugin-core/dist/plugin.wasm
 %attr(0750,immich,immich) %dir %{_localstatedir}/cache/immich
 
 %changelog
+* Wed Nov 04 2026 Immich RPM contributors - 3.3.6-1
+- Update to Immich 3.3.6
+
 * Wed Nov 04 2026 Immich RPM contributors - 3.3.5-4
 - Accept Fedora or RPM Fusion FFmpeg through executable dependencies
 

@@ -51,6 +51,8 @@ if os.environ.get("IMMICH_TEST_ML", "1") == "1":
     subprocess.run([
         "runuser", "-u", "immich-ml", "--",
         "/usr/libexec/immich-machine-learning/venv/bin/python", "-c",
+        "import os, immich_ml; "
+        "assert os.environ.get('ORT_DISABLE_TELEMETRY') == '1'; "
         "import onnx, onnxruntime as ort, numpy as np; "
         "h = onnx.helper; t = onnx.TensorProto.FLOAT; "
         "g = h.make_graph([h.make_node('Add', ['x', 'x'], ['y'])], 'rpm-smoke', "
@@ -58,8 +60,8 @@ if os.environ.get("IMMICH_TEST_ML", "1") == "1":
         "m = h.make_model(g, opset_imports=[h.make_opsetid('', 17)], ir_version=9); "
         "s = ort.InferenceSession(m.SerializeToString(), providers=['CPUExecutionProvider']); "
         "assert np.array_equal(s.run(None, {'x': np.array([1, 2], dtype=np.float32)})[0], [2, 4])",
-    ], check=True)
-    print("PASS: ONNX CPU inference", flush=True)
+    ], check=True, cwd="/usr/libexec/immich-machine-learning")
+    print("PASS: ONNX telemetry disabled by default and CPU inference", flush=True)
 wait_for("background workers and core plugin", lambda: "Loaded plugin:" in Path("/tmp/immich-server.log").read_text())
 
 password = str(uuid.uuid4()) + "aA1!"

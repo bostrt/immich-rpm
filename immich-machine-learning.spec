@@ -9,8 +9,8 @@
 %global _build_id_links none
 
 Name:           immich-machine-learning
-Version:        3.3.5
-Release:        2%{?dist}
+Version:        3.3.6
+Release:        1%{?dist}
 Summary:        Optional native CPU machine learning service for Immich
 License:        AGPL-3.0-only AND MIT AND Apache-2.0 AND BSD-3-Clause
 URL:            https://immich.app
@@ -85,6 +85,9 @@ PYTHONPATH=machine-learning ml-venv/bin/python -c 'import immich_ml.main; import
 %attr(0750,immich-ml,immich-ml) %dir %{_localstatedir}/cache/immich-machine-learning
 
 %changelog
+* Wed Nov 04 2026 Immich RPM contributors - 3.3.6-1
+- Update to Immich 3.3.6, disabling ONNX Runtime telemetry by default
+
 * Wed Nov 04 2026 Immich RPM contributors - 3.3.5-2
 - Declare native libraries needed by the build-time import check
 
